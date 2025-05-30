@@ -75,6 +75,21 @@ public class MVObsSystemDatabase extends AbstractModule<MVObsSystemDatabaseConfi
         if (!FileUtils.isSafeFilePath(config.storagePath))
             throw new DataStoreException("Storage path contains illegal characters: " + config.storagePath);
     }
+
+    public void exceptionHandler(Thread t, Throwable e) {
+        try {
+            // Not referencing t since sometimes it can be null (not sure why that's possible)
+            logger.error("MVStore Exception {}, Restarting system database module.", e.getMessage(), e);
+            this.getParentHub().getModuleRegistry().restartModuleAsync(this);
+        } catch (SensorHubException e1) {
+            try {
+                logger.error("{}, Unable to restart system database module. Stopping module.", e1.getMessage(), e1);
+                this.doStop();
+            } catch (SensorHubException e2) {
+                logger.error("{}, Unable to stop system database module.", e2.getMessage(), e2);
+            }
+        }
+    }
     
     
     @Override
@@ -83,9 +98,7 @@ public class MVObsSystemDatabase extends AbstractModule<MVObsSystemDatabaseConfi
         try
         {
             MVStore.Builder builder = new MVStore.Builder().fileName(config.storagePath);
-            builder.backgroundExceptionHandler((t, e) -> {
-                getLogger().error("Error in H2 background thread {}", t.getName(), e);
-            });
+            builder.backgroundExceptionHandler(this::exceptionHandler);
             
             if (config.readOnly)
                 builder.readOnly();
